@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 import numpy as np
 from torch.utils.data.sampler import WeightedRandomSampler
+from torch.utils.data.distributed import DistributedSampler
 
 def plot_images(images):
     plt.figure(figsize=(12, 12))
@@ -28,7 +29,7 @@ def save_images(images, path, **kwargs):
     # im.save(path)
 
 
-def get_data(args):
+def get_data_ddp(args):
     transforms = torchvision.transforms.Compose([
         torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
         torchvision.transforms.RandomResizedCrop(args.image_size, scale=(0.8, 1.0)),
@@ -37,7 +38,7 @@ def get_data(args):
         # each of the three channels of the images with a mean of 0.5 and a standard deviation of 0.5
     ])
     dataset = torchvision.datasets.ImageFolder(args.dataset_path, transform=transforms) # in datasets_path there are subfolders with images
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler=DistributedSampler(dataset))
     return dataloader
 
 def get_data_weight_random_sampler(args):
@@ -65,14 +66,6 @@ def get_data_weight_random_sampler(args):
     sampler = WeightedRandomSampler(weights, num_samples, replacement=False)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, sampler=sampler)
     return dataloader
-
-def setup_logging(run_name):
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("results", exist_ok=True)
-    os.makedirs(os.path.join("models", run_name), exist_ok=True)
-    # exists_ok=True to avoid error if the folder already exists
-    # (e.g. if you run the same experiment twice) and it does nothing.
-    os.makedirs(os.path.join("results", run_name), exist_ok=True)
 
 def IS_computer(generated_data_path, splits):
     transform = torchvision.transforms.Compose([

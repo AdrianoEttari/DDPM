@@ -7,40 +7,59 @@ from torch import optim
 from utils import *
 from modules import UNet_conditional, EMA
 import numpy as np
-import logging
 import copy
 from torch.utils.tensorboard import SummaryWriter
 import torch.multiprocessing as mp
-from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
+def ddp_setup():
+    init_process_group(backend="nccl") # nccl is a collective communication library that is optimized for NVIDIA GPUs
 
 # We will use the same number of noise steps for training and for sampling. It is not mandatory and we will do it just
 # to be practical, but notice that it is common to use a larger number of sampling steps during inference
 # than during training. This is because a larger number of sampling steps can lead to more accurate and diverse samples.
 class Diffusion:
-    def __init__(self, noise_schedule, noise_steps=1000, beta_start=1e-4, beta_end=0.02, img_size=256, device="cuda" ):
+    def __init__(
+            self,
+            noise_schedule: str,
+            save_every: int,
+            model: nn.Module,
+            train_data,
+            snapshot_path: str,
+            noise_steps=1000,
+            beta_start=1e-4,
+            beta_end=0.02,
+            img_size=256):
     
         self.noise_steps = noise_steps
         self.beta_start = beta_start
         self.beta_end = beta_end
         self.img_size = img_size
-        self.device = device
+        self.gpu_id = int(os.environ["LOCAL_RANK"])
+
+        self.train_data = train_data
+        self.snapshot_path = snapshot_path
+        if os.path.exists(snapshot_path):
+            print("Loading snapshot")
+            self._load_snapshot(snapshot_path)
+        self.save_every = save_every
+        self.epochs_run = 0
+        self.model = model.to(self.gpu_id)
+        self.model = DDP(self.model, gpu_id_ids=[self.gpu_id])
         self.noise_schedule = noise_schedule
 
-        self.beta = self.prepare_noise_schedule(noise_schedule=self.noise_schedule).to(device) # The reason why we use the method 'to' is that
-        # we want to move the tensor to the device we specified in the constructor (by default Pytorch 
+        self.beta = self.prepare_noise_schedule(noise_schedule=self.noise_schedule).to(self.gpu_id) # The reason why we use the method 'to' is that
+        # we want to move the tensor to the gpu_id we specified in the constructor (by default Pytorch 
         # stores it in the default memory location, which is usually the CPU).When you want to perform computations
-        # with the tensor on another device, such as a GPU, you need to move the tensor to the corresponding
-        # device memory using the 'to' method.
+        # with the tensor on another gpu_id, such as a GPU, you need to move the tensor to the corresponding
+        # gpu_id memory using the 'to' method.
         self.alpha = 1. - self.beta
-        self.alpha_hat = torch.cumprod(self.alpha, dim=0) # currently (10/02/23) torch.cumprod() doesn't work with mps device. If you are using cuda, you can use it.
+        self.alpha_hat = torch.cumprod(self.alpha, dim=0) # currently (10/02/23) torch.cumprod() doesn't work with mps gpu_id. If you are using cuda, you can use it.
         # alpha_cpu= self.alpha.cpu()
         # result = np.cumprod(alpha_cpu.numpy(), axis=0) # Notice that beta is not just a number, it is a tensor of shape (noise_steps,). If we are in the step t then we index the tensor with t. To get alpha_hat we compute the cumulative product of the tensor.
-        # self.alpha_hat = torch.from_numpy(result).to(device)
+        # self.alpha_hat = torch.from_numpy(result).to(gpu_id)
 
 
     def prepare_noise_schedule(self, noise_schedule):
@@ -88,16 +107,16 @@ class Diffusion:
 
         and this will be our final predicted noise.
         '''
-        logging.info(f"Sampling {n} new images....")
+
         model.eval() # disables dropout and batch normalization
         with torch.no_grad(): # disables gradient calculation
-            x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.device) # generates n noisy images of shape (3, self.img_size, self.img_size)
+            x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.gpu_id) # generates n noisy images of shape (3, self.img_size, self.img_size)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0): # tqdm just makes the loop show a progress bar.
                 # To be precise, it shows something like 999999it [00:04, 247411.64it/s]. Where 999999it is the
                 # number of iterations, 00:04 is the time elapsed to compute these iterations. 247411.64it/s is the
                 # number of iterations per second. The position=0 is just to make the progress bar appear in the
                 # first line of the terminal (position=1 -> the progress bar is displayed on the second line of the terminal).
-                t = (torch.ones(n) * i).long().to(self.device) # tensor of shape (n) with all the elements equal to i.
+                t = (torch.ones(n) * i).long().to(self.gpu_id) # tensor of shape (n) with all the elements equal to i.
                 # Basically, each of the n image will be processed with the same integer time step t.
                 predicted_noise = model(x, t, labels)
                 if cfg_scale > 0:
@@ -122,77 +141,73 @@ class Diffusion:
         x = (x * 255).type(torch.uint8)
         return x
 
+    def _save_snapshot(self, epoch):
+        snapshot = {
+            "MODEL_STATE": self.model.module.state_dict(),
+            "EPOCHS_RUN": epoch,
+        }
+        torch.save(snapshot, self.snapshot_path)
+        print(f"Epoch {epoch} | Training snapshot saved at {self.snapshot_path}")
 
-def train(args):
-    setup_logging(args.run_name)
-    device = args.device
-    noise_schedule = args.noise_schedule
-    dataloader = get_data_weight_random_sampler(args)
-    model = UNet_conditional(num_classes=args.num_classes, device=device).to(device)
-    if args.continue_training:
-      ckpt = torch.load(args.weight_path, map_location=torch.device(device))
-      model.load_state_dict(ckpt)
+    def _load_snapshot(self, snapshot_path):
+        loc = f"cuda:{self.gpu_id}"
+        snapshot = torch.load(snapshot_path, map_location=loc)
+        self.model.load_state_dict(snapshot["MODEL_STATE"])
+        self.epochs_run = snapshot["EPOCHS_RUN"]
+        print(f"Resuming training from snapshot at Epoch {self.epochs_run}")
 
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr) # AdamW is a variant of Adam that adds weight decay (L2 regularization)
-    # Basically, weight decay is a regularization technique that penalizes large weights. It's a way to prevent overfitting. In AdamW, 
-    # the weight decay is added to the gradient and not to the weights. This is because the weights are updated in a different way in AdamW.
-    mse = nn.MSELoss()
-    diffusion = Diffusion(img_size=args.image_size, device=device, noise_schedule=noise_schedule)
-    logger = SummaryWriter(os.path.join("runs", args.run_name))
-    l = len(dataloader)
-    ema = EMA(beta = 0.995)
-    ema_model = copy.deepcopy(model).eval().requires_grad_(False) # create the copy of the model
-    # Remember that EMA works by creating a copy of the initial model weights and then
-    # update them with moving average for the main model (w = B * w_{old} + (1-B) * w_{new})
+    def train(self, args):
+        model = self.model
+        dataloader = self.train_data
+        gpu_id = self.gpu_id
+        noise_schedule = self.noise_schedule
 
-    for epoch in range(args.epochs):
-        logging.info(f"Starting epoch {epoch}:")
-        pbar = tqdm(dataloader)
-        for i, (images, labels) in enumerate(pbar):
-            images = images.to(device)
-            labels = labels.to(device)
-            t = diffusion.sample_timesteps(images.shape[0]).to(device)
-            # t is a unidimensional tensor of shape (images.shape[0] that is the batch_size)
-            # with random integers from 1 to noise_steps.
-            x_t, noise = diffusion.noise_images(images, t) # here I'm going to get batch_size noise images
-            if np.random.random() < 0.1: # 10% of the time, don't pass labels (we train 10% 
-                # of the times uncoditionally and 90% conditionally)
-                labels = None
-            predicted_noise = model(x_t, t, labels) # here we pass the plain labels to the model (i.e. 0,1,2,...,9 if there are 10 classes)
-            # The labels are created according to the order of the class folders (the first folder will have class 0).
-            loss = mse(noise, predicted_noise)
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr) # AdamW is a variant of Adam that adds weight decay (L2 regularization)
+        # Basically, weight decay is a regularization technique that penalizes large weights. It's a way to prevent overfitting. In AdamW, 
+        # the weight decay is added to the gradient and not to the weights. This is because the weights are updated in a different way in AdamW.
+        mse = nn.MSELoss()
+        diffusion = Diffusion(img_size=args.image_size, gpu_id=gpu_id, noise_schedule=noise_schedule)
+        logger = SummaryWriter(os.path.join("runs", args.run_name))
+        l = len(dataloader)
+        ema = EMA(beta = 0.995)
+        ema_model = copy.deepcopy(model).eval().requires_grad_(False) # create the copy of the model
+        # Remember that EMA works by creating a copy of the initial model weights and then
+        # update them with moving average for the main model (w = B * w_{old} + (1-B) * w_{new})
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            ema.step_ema(ema_model, model) # call the step_ema after every model update
+        for epoch in range(args.epochs):
+            pbar = tqdm(dataloader)
+            for i, (images, labels) in enumerate(pbar):
+                images = images.to(gpu_id)
+                labels = labels.to(gpu_id)
+                t = diffusion.sample_timesteps(images.shape[0]).to(gpu_id)
+                # t is a unidimensional tensor of shape (images.shape[0] that is the batch_size)
+                # with random integers from 1 to noise_steps.
+                x_t, noise = diffusion.noise_images(images, t) # here I'm going to get batch_size noise images
+                if np.random.random() < 0.1: # 10% of the time, don't pass labels (we train 10% 
+                    # of the times uncoditionally and 90% conditionally)
+                    labels = None
+                predicted_noise = model(x_t, t, labels) # here we pass the plain labels to the model (i.e. 0,1,2,...,9 if there are 10 classes)
+                # The labels are created according to the order of the class folders (the first folder will have class 0).
+                loss = mse(noise, predicted_noise)
 
-            pbar.set_postfix(MSE=loss.item()) # set_postfix just adds a message or value
-            # displayed after the progress bar. In this case the loss of Batch i.
-            logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                ema.step_ema(ema_model, model) # call the step_ema after every model update
 
-        if epoch % 10 == 0:
-            # labels = torch.arange(args.num_classes).long().to(device)
-            # ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
-            if args.continue_training:
-              torch.save(ema_model.state_dict(), os.path.join("weights", f"conditional_ckpt_{epoch+args.starting_epoch}_epoch.pt"))
-              torch.save(optimizer.state_dict(), os.path.join("weights", f"conditional_optim_{epoch+args.starting_epoch}_epoch.pt"))
-            else:
-                torch.save(ema_model.state_dict(), os.path.join("weights", f"conditional_ckpt_{epoch}_epoch.pt"))
-                torch.save(optimizer.state_dict(), os.path.join("weights", f"conditional_optim_{epoch}_epoch.pt"))
-            for weight in os.listdir('weights'):
-              if (weight != f"conditional_ckpt_{epoch+args.starting_epoch}_epoch.pt") & (weight != f"conditional_ckpt_{epoch}_epoch.pt") & (weight != f"conditional_optim_{epoch+args.starting_epoch}_epoch.pt") & (weight != f"conditional_optim_{epoch}_epoch.pt"):
-                os.remove(os.path.join("weights", weight))
-            # AFTER THE WEIGHTS ARE SAVED YOU CAN RUN SOMETHING LIKE THAT:
-            # model = YourModelClass()
-            # model.load_state_dict(torch.load(os.path.join("models", "ckpt.pt")))
-            # It's important to notice that the model's architecture  must be identical to the one you trained and saved
+                pbar.set_postfix(MSE=loss.item()) # set_postfix just adds a message or value
+                # displayed after the progress bar. In this case the loss of Batch i.
+                logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+
+            if self.gpu_id == 0 and epoch % self.save_every == 0:
+                self._save_snapshot(epoch)
+                # labels = torch.arange(args.num_classes).long().to(gpu_id)
+                # ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
 
 
 def launch():
     import argparse     
     parser = argparse.ArgumentParser()
-    # args = parser.parse_args()
     args, unknown = parser.parse_known_args()
     args.run_name = "DDPM_Condtional"
     args.epochs = 51
@@ -200,32 +215,29 @@ def launch():
     args.image_size = 64
     args.num_classes = 10
 
-    args.continue_training = True
-    
-    higher_epoch = 0
-    for weight in os.listdir('weights'):
-      if int(weight.split('_')[2]) > higher_epoch:
-        higher_epoch = int(weight.split('_')[2])
-
-    args.starting_epoch = higher_epoch
-    args.weight_path = f"weights/ckpt_{higher_epoch}_epoch.pt"
-    
-    args.noise_schedule = 'linear'
     args.dataset_path = "animal10/raw-img"
-    args.device = "cuda" # you can use either "cpu" or "cuda". You cannot use "mps" because some functions of torch 
+    # args.gpu_id = "cuda" # you can use either "cpu" or "cuda". You cannot use "mps" because some functions of torch 
     # are not implemented for MPS (e.g. torch.cumprod()).
     args.lr = 3e-4
-    os.makedirs()
-    train(args)
+
+    os.makedirs('weights', exist_ok=True)
+    dataloader = get_data_ddp(args)
+    model = UNet_conditional(num_classes=args.num_classes)
+    diffusion = Diffusion(noise_schedule='linear', save_every=10, model=model, 
+                          train_data=dataloader, snapshot_path="weights/snapshot.pt",
+                          noise_steps=1000, beta_start=1e-4, beta_end=0.02,
+                          img_size=256)
+
+    diffusion.train() # CONTINUARE DA QUI 
 
 
 if __name__ == '__main__':
     launch()
-    # device = "cuda"
-    # model = UNet().to(device)
+    # gpu_id = "cuda"
+    # model = UNet().to(gpu_id)
     # ckpt = torch.load("./working/orig/ckpt.pt")
     # model.load_state_dict(ckpt)
-    # diffusion = Diffusion(img_size=64, device=device)
+    # diffusion = Diffusion(img_size=64, gpu_id=gpu_id)
     # x = diffusion.sample(model, 8)
     # print(x.shape)
     # plt.figure(figsize=(32, 32))

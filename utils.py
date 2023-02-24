@@ -28,7 +28,6 @@ def save_images(images, path, **kwargs):
     # im = Image.fromarray(ndarr)
     # im.save(path)
 
-
 def get_data_ddp(args):
     transforms = torchvision.transforms.Compose([
         torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size

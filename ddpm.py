@@ -5,11 +5,16 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 from torch import optim
 from utils import *
-from modules import UNet_conditional, UNet, EMA
+from modules import UNet_conditional, EMA
 import numpy as np
 import logging
 import copy
 from torch.utils.tensorboard import SummaryWriter
+import torch.multiprocessing as mp
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
+
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
@@ -42,15 +47,7 @@ class Diffusion:
         if noise_schedule == 'linear':
             return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
         elif noise_schedule == 'cosine':
-            # TO CHECK BETTER (IT'S TOO FAST)
-            # step = (np.pi / 2) / self.noise_steps
-            step = (np.pi) / self.noise_steps
-            # cosine = torch.arange(0, np.pi / 2 + step, step).cos()
-            cosine = torch.arange(0, np.pi + step, step).cos()
-            cosine_inverse = cosine[:-1]
-            # noise_schedule = self.beta_start + (self.beta_end - self.beta_start) * (1 + cosine) / 2
-            noise_schedule = self.beta_start + (self.beta_end - self.beta_start) * (1 + cosine_inverse) / 2
-            return noise_schedule
+            pass
 
     def noise_images(self, x, t):
         '''
@@ -131,9 +128,9 @@ def train(args):
     device = args.device
     noise_schedule = args.noise_schedule
     dataloader = get_data_weight_random_sampler(args)
-    model = UNet_conditional(num_classes=args.num_classes).to(device)
+    model = UNet_conditional(num_classes=args.num_classes, device=device).to(device)
     if args.continue_training:
-      ckpt = torch.load(args.weight_path, map_location=torch.device(args.device))
+      ckpt = torch.load(args.weight_path, map_location=torch.device(device))
       model.load_state_dict(ckpt)
 
     optimizer = optim.AdamW(model.parameters(), lr=args.lr) # AdamW is a variant of Adam that adds weight decay (L2 regularization)

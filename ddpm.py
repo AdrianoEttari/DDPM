@@ -8,7 +8,6 @@ from utils import *
 from modules import UNet_conditional, EMA
 import numpy as np
 import copy
-from torch.utils.tensorboard import SummaryWriter
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
@@ -156,25 +155,25 @@ class Diffusion:
         self.epochs_run = snapshot["EPOCHS_RUN"]
         print(f"Resuming training from snapshot at Epoch {self.epochs_run}")
 
-    def train(self, args):
+    def train(self, lr, image_size, epochs):
         model = self.model
         dataloader = self.train_data
         gpu_id = self.gpu_id
         noise_schedule = self.noise_schedule
 
-        optimizer = optim.AdamW(model.parameters(), lr=args.lr) # AdamW is a variant of Adam that adds weight decay (L2 regularization)
+        optimizer = optim.AdamW(model.parameters(), lr=lr) # AdamW is a variant of Adam that adds weight decay (L2 regularization)
         # Basically, weight decay is a regularization technique that penalizes large weights. It's a way to prevent overfitting. In AdamW, 
         # the weight decay is added to the gradient and not to the weights. This is because the weights are updated in a different way in AdamW.
         mse = nn.MSELoss()
-        diffusion = Diffusion(img_size=args.image_size, gpu_id=gpu_id, noise_schedule=noise_schedule)
-        logger = SummaryWriter(os.path.join("runs", args.run_name))
+        diffusion = Diffusion(img_size=image_size, gpu_id=gpu_id, noise_schedule=noise_schedule)
+
         l = len(dataloader)
         ema = EMA(beta = 0.995)
         ema_model = copy.deepcopy(model).eval().requires_grad_(False) # create the copy of the model
         # Remember that EMA works by creating a copy of the initial model weights and then
         # update them with moving average for the main model (w = B * w_{old} + (1-B) * w_{new})
 
-        for epoch in range(args.epochs):
+        for epoch in range(epochs):
             pbar = tqdm(dataloader)
             for i, (images, labels) in enumerate(pbar):
                 images = images.to(gpu_id)
@@ -197,7 +196,6 @@ class Diffusion:
 
                 pbar.set_postfix(MSE=loss.item()) # set_postfix just adds a message or value
                 # displayed after the progress bar. In this case the loss of Batch i.
-                logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
             if self.gpu_id == 0 and epoch % self.save_every == 0:
                 self._save_snapshot(epoch)
@@ -205,43 +203,42 @@ class Diffusion:
                 # ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
 
 
-def launch():
-    import argparse     
-    parser = argparse.ArgumentParser()
-    args, unknown = parser.parse_known_args()
-    args.run_name = "DDPM_Condtional"
-    args.epochs = 51
-    args.batch_size = 8
-    args.image_size = 64
-    args.num_classes = 10
-
-    args.dataset_path = "animal10/raw-img"
-    # args.gpu_id = "cuda" # you can use either "cpu" or "cuda". You cannot use "mps" because some functions of torch 
-    # are not implemented for MPS (e.g. torch.cumprod()).
-    args.lr = 3e-4
-
+def launch(num_classes: int,
+            image_size,
+            dataset_path: str,
+            batch_size: int,
+            lr: float,
+            epochs: int,
+            noise_schedule: str,
+            save_every: int,
+            snapshot_path: str):
+    '''
+    Don't get confused by image_size and img_size. The first is the size of the images in the dataset and will be passed to the dataloader.
+    The second is passed just to the sample to generate images. You can tweak both of them.
+    '''
+    ddp_setup()
     os.makedirs('weights', exist_ok=True)
-    dataloader = get_data_ddp(args)
-    model = UNet_conditional(num_classes=args.num_classes)
-    diffusion = Diffusion(noise_schedule='linear', save_every=10, model=model, 
-                          train_data=dataloader, snapshot_path="weights/snapshot.pt",
+    dataloader = get_data_ddp(image_size, dataset_path, batch_size)
+    model = UNet_conditional(num_classes=num_classes)
+    diffusion = Diffusion(noise_schedule=noise_schedule, save_every=save_every, model=model, 
+                          train_data=dataloader, snapshot_path=snapshot_path,
                           noise_steps=1000, beta_start=1e-4, beta_end=0.02,
                           img_size=256)
-
-    diffusion.train() # CONTINUARE DA QUI 
-
+    diffusion.train(lr, image_size, epochs)
+    destroy_process_group()
 
 if __name__ == '__main__':
-    launch()
-    # gpu_id = "cuda"
-    # model = UNet().to(gpu_id)
-    # ckpt = torch.load("./working/orig/ckpt.pt")
-    # model.load_state_dict(ckpt)
-    # diffusion = Diffusion(img_size=64, gpu_id=gpu_id)
-    # x = diffusion.sample(model, 8)
-    # print(x.shape)
-    # plt.figure(figsize=(32, 32))
-    # plt.imshow(torch.cat([
-    #     torch.cat([i for i in x.cpu()], dim=-1),
-    # ], dim=-2).permute(1, 2, 0).cpu())
-    # plt.show()
+    import argparse     
+    parser = argparse.ArgumentParser(description='DDPM conditional with EMA and cosine schedule')
+    parser.add_argument('--dataset_path', type=str)
+    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--image_size', type=int, default=64)
+    parser.add_argument('--num_classes', type=int, default=10)
+    parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--save_every', type=int, default=10)
+    parser.add_argument('--noise_schedule', type=str, default='linear')
+    parser.add_argument('--snapshot_path', type=str, default='weights/snapshot.pt')
+    args = parser.parse_args()
+    launch(args.dataset_path, args.epochs, args.batch_size, args.image_size, args.num_classes, args.lr, args.save_every, args.noise_schedule, args.snapshot_path)
+    # torchrun --standalone --nproc_per_node=cpu ddpm.py --dataset_path=raw-img/

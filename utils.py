@@ -15,7 +15,6 @@ def plot_images(images):
     ], dim=-2).permute(1, 2, 0).cpu())
     plt.show()
 
-
 def save_images(images, path, **kwargs):
     grid = torchvision.utils.make_grid(images, **kwargs)
     ndarr = grid.permute(1, 2, 0).to('cpu').numpy()
@@ -28,42 +27,16 @@ def save_images(images, path, **kwargs):
     # im = Image.fromarray(ndarr)
     # im.save(path)
 
-def get_data_ddp(args):
+def get_data_ddp(image_size, dataset_path: str, batch_size: int):
     transforms = torchvision.transforms.Compose([
-        torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
-        torchvision.transforms.RandomResizedCrop(args.image_size, scale=(0.8, 1.0)),
+        torchvision.transforms.Resize(80), 
+        torchvision.transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # normalizes 
         # each of the three channels of the images with a mean of 0.5 and a standard deviation of 0.5
     ])
-    dataset = torchvision.datasets.ImageFolder(args.dataset_path, transform=transforms) # in datasets_path there are subfolders with images
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, sampler=DistributedSampler(dataset))
-    return dataloader
-
-def get_data_weight_random_sampler(args):
-    transforms = torchvision.transforms.Compose([
-        torchvision.transforms.Resize(80),  # args.image_size + 1/4 *args.image_size
-        torchvision.transforms.RandomResizedCrop(args.image_size, scale=(0.8, 1.0)),
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # normalizes 
-        # each of the three channels of the images with a mean of 0.5 and a standard deviation of 0.5
-    ])
-    dataset = torchvision.datasets.ImageFolder(args.dataset_path, transform=transforms) # in datasets_path there are subfolders with images
-    num_samples = len(dataset)
-    targets = dataset.targets
-
-    # We want to give the same importance to each class. Therefore, we give a weight equal to
-    # the reciprocal of the class occurence. For example, if class 0 appears 10 times in the
-    # dataset, we give a weight of 1/10 to each sample of class 0 (in this way the classes
-    # with less pictures will be taken with the same frequency of the other classes of being taken).
-    class_counts = [0] * torch.unique(torch.tensor(dataset.targets)).size()[0]
-    for t in targets:
-        class_counts[t] += 1
-    weights = [1.0/class_counts[t] for t in targets]
-
-    # create sampler and dataloader
-    sampler = WeightedRandomSampler(weights, num_samples, replacement=False)
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, sampler=sampler)
+    dataset = torchvision.datasets.ImageFolder(dataset_path, transform=transforms) # in datasets_path there are subfolders with images
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=DistributedSampler(dataset))
     return dataloader
 
 def IS_computer(generated_data_path, splits):

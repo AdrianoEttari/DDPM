@@ -4,11 +4,10 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 
 **NOTICE: SOME OF THE FOLLOWING POINTS ARE STILL WORKING IN PROCESS**
 
-*  I wrote some functions in utils to get the FDI and the IS indices
-* I changed the schedule from linear to cosine
-* I added some snippets for making it fault tolerant and working on multiple GPUs
+* I wrote some functions in utils to get the FDI and the IS indices
+* I changed the schedule from linear to cosine (actually I give the chance to the user to select the preferred one)
+* I adapted the code for making it fault tolerant and working on multiple GPUs
 * I added a new feature that consists in allowing the user to write something he wants to show up and then the algorithm generates images from this text
-* Eventually, I added some code to make it working on the Animal-10 dataset. 
 
 ## Distributed Data Parallel (Or Distributed Training) and Fault Tolerance
 

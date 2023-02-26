@@ -11,9 +11,10 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 
 ## Cosine vs Linear Schedule
 
-![Uploading image_destruction_cos_120.gif…]()
+![image_destruction_cosine_120](https://user-images.githubusercontent.com/120527637/221417264-40e1726d-f9f3-4232-8988-2f67aeaeefdc.gif)
+![image_destruction_linear_120](https://user-images.githubusercontent.com/120527637/221417267-fc369fd4-6ce0-444e-ab99-fa8dd39c03fd.gif)
+![noise_schedule](https://user-images.githubusercontent.com/120527637/221417270-60ccca02-7734-474a-a063-b1720b94cd5d.png)
 
-![linear-schedule](https://github.com/AdrianoEttari/DDPM/blob/main/image_destruction_linear.gif)
 
 ## Distributed Data Parallel (Or Distributed Training) and Fault Tolerance
 

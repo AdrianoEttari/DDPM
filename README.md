@@ -1,6 +1,10 @@
 # DDPM
 
-In this repository you can find an application of a Deep Diffusion Model on the Animals-10 gold ranked dataset of kaggle https://www.kaggle.com/datasets/alessiocorrado99/animals10. Most of the code you can find here is based on the github repository in the following link https://github.com/dome272/Diffusion-Models-pytorch. I really suggest you to take a look at it, it is a very good repository and also he explaines everything in two well done youtube videos. I have just added some code to improve it:
+In this repository you can find an application of a Deep Diffusion Model on the Animals-10 gold ranked dataset of kaggle https://www.kaggle.com/datasets/alessiocorrado99/animals10. Most of the code you can find here is based on the github repository in the following link https://github.com/dome272/Diffusion-Models-pytorch. I really suggest you to take a look at it, it is a very good repository and also he explaines everything in two well done youtube videos. 
+
+Regarding to order of the code. In the `utils.py`, you can find some functions for plotting the images, to compute the FDI and the IS indices and also the function to get the dataloader. In the `modules.py` you can find all the classes regarding the UNet_conditional model. The `ddpm.py` is the main file, where all the other functions are called and where we implement all the functions regarding the ddpm. `test.py` is a function where we performed some tests (you can skip it). Finally, in raw-img folder you find our images and in the animation folder you find some pictures and gifs to explain the theory and our results.
+
+I have just added some code to improve it:
 
 **NOTICE: SOME OF THE FOLLOWING POINTS ARE STILL WORKING IN PROCESS**
 
@@ -8,6 +12,7 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 * I changed the schedule from linear to cosine (actually I give the chance to the user to select the preferred one)
 * I adapted the code for making it fault tolerant and working on multiple GPUs
 * I added a new feature that consists in allowing the user to write something he wants to show up and then the algorithm generates images from this text
+
 
 ## FDI and IS
 

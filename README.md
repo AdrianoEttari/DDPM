@@ -4,7 +4,7 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 
 Regarding the organization of the material. In the `utils.py`, you can find some functions for plotting the images, for computing the FDI and the IS indices and also the function to get the dataloader. In the `modules.py` you can find all the classes regarding the UNet_conditional model. The `ddpm.py` is the main file, where all the other functions are called and where we implement all the functions regarding the deep diffusion models. `test.py` is a function where we performed some tests (you can skip it). Finally, in raw-img folder you find our images and in the animation folder you find some pictures and gifs to explain the theory and our results.
 
-I have just added some code to improve it:
+Most of the code you can find here is based on the github repository in the following link https://github.com/dome272/Diffusion-Models-pytorch. I really suggest you to take a look at it, it is a very good repository and also he explaines everything in two well done youtube videos. I have just added some code to improve it:
 
 **NOTICE: SOME OF THE FOLLOWING POINTS ARE STILL WORKING IN PROCESS**
 

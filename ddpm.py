@@ -11,6 +11,7 @@ import copy
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
+import imageio
 
 
 def ddp_setup():
@@ -36,7 +37,11 @@ class Diffusion:
         self.beta_start = beta_start
         self.beta_end = beta_end
         self.img_size = img_size
-        self.gpu_id = int(os.environ["LOCAL_RANK"])
+        
+        if os.environ.get("LOCAL_RANK")==None:
+            self.gpu_id = 'cpu'
+        else:
+            self.gpu_id = int(os.environ["LOCAL_RANK"])
 
         self.train_data = train_data
         self.snapshot_path = snapshot_path
@@ -65,7 +70,9 @@ class Diffusion:
         if noise_schedule == 'linear':
             return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
         elif noise_schedule == 'cosine':
-            pass
+            f_t = torch.cos(((((torch.arange(self.noise_steps)/self.noise_steps)+0.008)/(1+0.008))*torch.pi/2))
+            alpha_hat = f_t/f_t[0]  
+            return alpha_hat
 
     def noise_images(self, x, t):
         '''
@@ -202,6 +209,16 @@ class Diffusion:
                 # labels = torch.arange(args.num_classes).long().to(gpu_id)
                 # ema_sampled_images = diffusion.sample(ema_model, n=len(labels), labels=labels)
 
+    def gif_forward_creator(self, image_path, save_path, fps=24):
+        alpha_hat = self.prepare_noise_schedule(self.noise_schedule)
+        img_from_data = Image.open(image_path)
+        image = torchvision.transforms.ToTensor()(img_from_data)[None, :]
+        t = torch.arange(0, self.noise_steps).long()
+        noised_image, _ = self.noise_images(image, t, alpha_hat)
+        images = torch.cat([image, noised_image], dim=0)
+        pil_images = [torchvision.transforms.ToPILImage()(images[i]) for i in range(self.noise_steps+1)]
+        imageio.mimsave(save_path, pil_images, fps=fps)
+
 
 def launch(num_classes: int,
             image_size,
@@ -217,11 +234,12 @@ def launch(num_classes: int,
     The second is passed just to the sample to generate images. You can tweak both of them.
     '''
     ddp_setup()
-    os.makedirs('weights', exist_ok=True)
+    path = 'weights'
+    os.makedirs(path, exist_ok=True)
     dataloader = get_data_ddp(image_size, dataset_path, batch_size)
     model = UNet_conditional(num_classes=num_classes)
     diffusion = Diffusion(noise_schedule=noise_schedule, save_every=save_every, model=model, 
-                          train_data=dataloader, snapshot_path=snapshot_path,
+                          train_data=dataloader, snapshot_path=os.path.join(path, snapshot_path),
                           noise_steps=1000, beta_start=1e-4, beta_end=0.02,
                           img_size=256)
     diffusion.train(lr, image_size, epochs)
@@ -237,8 +255,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_classes', type=int, default=10)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--save_every', type=int, default=10)
-    parser.add_argument('--noise_schedule', type=str, default='linear')
-    parser.add_argument('--snapshot_path', type=str, default='weights/snapshot.pt')
+    parser.add_argument('--noise_schedule', type=str, default='cosine')
+    parser.add_argument('--snapshot_path', type=str, default='snapshot.pt') # You just need to pass the name of the snapshot file.
     args = parser.parse_args()
     launch(args.dataset_path, args.epochs, args.batch_size, args.image_size, args.num_classes, args.lr, args.save_every, args.noise_schedule, args.snapshot_path)
-    # torchrun --standalone --nproc_per_node=cpu ddpm.py --dataset_path=raw-img/
+    
+# torchrun --standalone --nproc_per_node=cpu ddpm.py --dataset_path=raw-img/

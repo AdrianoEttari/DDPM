@@ -11,8 +11,9 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 
 ## Cosine vs Linear Schedule
 
-![cosine schedule](image_destruction_cos.gif)
-![linear schedule](image_destruction_linear.gif)
+![cosine schedule](https://github.com/AdrianoEttari/DDPM/blob/main/image_destruction_cos.gif)
+
+![linear schedule](https://github.com/AdrianoEttari/DDPM/blob/main/image_destruction_linear.gif)
 ## Distributed Data Parallel (Or Distributed Training) and Fault Tolerance
 
 Why we want to distribute our training? Because it is faster. If you have a machine with 4 GPUs, you can train your model 4 times faster than if you had only one GPU. 

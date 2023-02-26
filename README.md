@@ -11,7 +11,7 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 
 ## Cosine vs Linear Schedule
 
-![cosine-schedule](https://github.com/AdrianoEttari/DDPM/blob/main/image_destruction_cos.gif)
+![Uploading image_destruction_cos_120.gif…]()
 
 ![linear-schedule](https://github.com/AdrianoEttari/DDPM/blob/main/image_destruction_linear.gif)
 

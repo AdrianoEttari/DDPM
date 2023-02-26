@@ -9,6 +9,43 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 * I adapted the code for making it fault tolerant and working on multiple GPUs
 * I added a new feature that consists in allowing the user to write something he wants to show up and then the algorithm generates images from this text
 
+## FDI and IS
+
+Inception Score and Fréchet Distance (FDI) are two commonly used metrics in the field of deep learning to evaluate the performance of generative models.
+
+### Inception Score (IS) **↑**
+
+The Inception Score is a metric used to evaluate the quality of generated image**s. It measures how well a generative model can classify the images it generates**. **The score is calculated by feeding the generated images through a pre-trained inception network and calculating the entropy of the class predictions.**
+
+A high Inception Score indicates that the generated images are diverse and visually appealing. However, it has been criticized for not accounting for the realism of the generated images, which can lead to artificially high scores.
+
+However, when evaluating the IS on a true dataset, the expected score range is not the same as when evaluating it on a generated dataset. In general, the IS values for real images can range from 5 to 25, depending on the dataset and the specific evaluation method used **(notice that if the generated images are pretty realistic than the FDI will be small (positive thing) and since there exists the trade-off between FDI and IS, the IS will be small too (negative thing))**.
+
+The Inception Score is calculated using the following formula:
+
+$$
+IS = e^{E[KL(p(y|x) || p(x))]}
+$$
+
+where p(y|x) is the class probability distribution of the generated images, p(x) is the class probability distribution of the real images, and KL is the Kullback-Leibler divergence.
+
+### Fréchet Distance (FDI) **↓**
+
+Fréchet Distance is another metric used to evaluate the quality of generative models. Unlike the Inception Score, **FDI measures the similarity between the distribution of real images and the distribution of generated images**. **It calculates the distance between the feature representations of the two distributions,** which are obtained by feeding them through a pre-trained convolutional neural network.
+
+A low Fréchet Distance indicates that the generated images are realistic and similar to the real images. However, FDI is computationally more expensive than Inception Score and requires more data to be effective.
+
+Both Inception Score and FDI are important tools for evaluating the quality of generative models. While Inception Score is good for evaluating the diversity of generated images, FDI is better for evaluating the realism of the generated images.
+
+The Fréchet Distance is calculated using the following formula:
+
+$$
+FDI = ||mu_1 - mu_2||^2 + Tr(sigma_1 + sigma_2 - 2\sqrt{(sigma_1 * sigma_2)})
+$$
+
+where mu_1 and mu_2 are the mean feature representations of the real and generated images, and sigma_1 and sigma_2 are the covariance matrices of the real and generated images, respectively.
+
+In diffusion models (with CFG) you get lower FDI with a small amount of guidance (w=0.1 or w=0.3).
 ## Cosine vs Linear Schedule
 As explained in the OpenAI paper (https://arxiv.org/pdf/2102.09672.pdf) in the chapter 3.2, the linear schedule works well for high resolution images, but for 64x64 or 32x32 images it's sub-optimal. The main problem is that the linear schedule is redundant at the last steps (it converges to random noise too fast), indeed if you skip the last 20% of the noise steps, the results quality doesn't change much. The cosine schedule solves this problem. As suggested by the authors, every function that acts like the cosine schedule that you see in the following plot is a good candidate for the noise schedule.
 

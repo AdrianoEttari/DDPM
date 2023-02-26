@@ -9,6 +9,10 @@ In this repository you can find an application of a Deep Diffusion Model on the 
 * I adapted the code for making it fault tolerant and working on multiple GPUs
 * I added a new feature that consists in allowing the user to write something he wants to show up and then the algorithm generates images from this text
 
+## Cosine vs Linear Schedule
+
+![cosine schedule](image_destruction_cos.gif)
+![linear schedule](image_destruction_linear.gif)
 ## Distributed Data Parallel (Or Distributed Training) and Fault Tolerance
 
 Why we want to distribute our training? Because it is faster. If you have a machine with 4 GPUs, you can train your model 4 times faster than if you had only one GPU. 

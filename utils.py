@@ -69,5 +69,30 @@ def IS_computer(generated_data_path, splits):
     is_mean, is_std = np.mean(scores), np.std(scores)
     return is_mean, is_std
 
-def FDI_computer():
-    pass
+
+
+
+def FDI_computer(real_images, generated_images):
+    from scipy.linalg import sqrtm
+    model = torchvision.models.inception_v3(pretrained=True, transfrom_input=False).cuda().eval()
+    # Generate feature representations of real and generated images
+    real_features = model.predict(real_images)
+    generated_features = model.predict(generated_images)
+    # Calculate mean and covariance of feature representations
+    mu1, sigma1 = real_features.mean(axis=0), np.cov(real_features, rowvar=False)
+    mu2, sigma2 = generated_features.mean(axis=0), np.cov(generated_features, rowvar=False)
+    # Calculate the Fréchet Distance
+    diff = mu1 - mu2
+    covmean, _ = sqrtm(sigma1.dot(sigma2), disp=False)
+    # YOU CAN ALSO USE THE FOLLOWING PYTORCH CODE INSTEAD OF USING SCIPY
+
+    # covmean = torch.mm(torch.sqrt(sigma1), torch.sqrt(sigma2)) # THIS IS ONE WAY
+
+    # eigvals, eigvecs = torch.linalg.eig(A) # THIS IS THE OTHER WAY
+    # eigvals_sqrt = torch.diag(torch.sqrt(eigvals))
+    # covmean = eigvecs @ eigvals_sqrt @ torch.linalg.inv(eigvecs)
+
+    if np.iscomplexobj(covmean):
+        covmean = covmean.real
+    fid = diff.dot(diff) + np.trace(sigma1 + sigma2 - 2*covmean)
+    return fid

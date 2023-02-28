@@ -54,9 +54,9 @@ In diffusion models (with CFG) you get lower FDI with a small amount of guidance
 ## Cosine vs Linear Schedule
 As explained in the OpenAI paper (https://arxiv.org/pdf/2102.09672.pdf) in the chapter 3.2, the linear schedule works well for high resolution images, but for 64x64 or 32x32 images it's sub-optimal. The main problem is that the linear schedule is redundant at the last steps (it converges to random noise too fast), indeed if you skip the last 20% of the noise steps, the results quality doesn't change much. The cosine schedule solves this problem. As suggested by the authors, every function that acts like the cosine schedule that you see in the following plot is a good candidate for the noise schedule.
 
-![image_destruction_cosine_120](https://user-images.githubusercontent.com/120527637/221417264-40e1726d-f9f3-4232-8988-2f67aeaeefdc.gif)
+![image_destruction_cosine_120](https://user-images.githubusercontent.com/120527637/221933353-faa67498-ee22-4373-a466-afa6917dde68.gif)
 ![image_destruction_linear_120](https://user-images.githubusercontent.com/120527637/221417267-fc369fd4-6ce0-444e-ab99-fa8dd39c03fd.gif)
-![noise_schedule](https://user-images.githubusercontent.com/120527637/221417270-60ccca02-7734-474a-a063-b1720b94cd5d.png)
+![noise_schedule](https://user-images.githubusercontent.com/120527637/221933361-8352564b-db20-4942-9f1a-dfbad2acb3d3.png)
 
 
 ## Distributed Data Parallel (Or Distributed Training) and Fault Tolerance

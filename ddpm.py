@@ -70,7 +70,7 @@ class Diffusion:
         if noise_schedule == 'linear':
             return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
         elif noise_schedule == 'cosine':
-            f_t = torch.cos(((((torch.arange(self.noise_steps)/self.noise_steps)+0.008)/(1+0.008))*torch.pi/2))
+            f_t = torch.cos(((((torch.arange(self.noise_steps)/self.noise_steps)+0.008)/(1+0.008))*torch.pi/2))**2
             alpha_hat = f_t/f_t[0]  
             return alpha_hat
 

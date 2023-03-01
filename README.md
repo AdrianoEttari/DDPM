@@ -1,3 +1,23 @@
+# Pipeline:
+
+1. Command `git clone https://github.com/AdrianoEttari/DDPM`
+2. Command `conda create --name <env> --file requirements.txt`
+3. Command `conda activate <env>`
+4. `ddpm.py` is the script to run. In the following list you can find the arguments you can pass and their defaults:
+    
+    * `--dataset_path`
+    * `--epochs` (default=500)
+    * `--batch_size` (default=32)
+    * `--image_size` (default=64)
+    * `--num_classes` (default=10)
+    * `--lr` (default=3e-4)
+    * `--save_every` (default=10)
+    * `--noise_schedule` (default="cosine")
+    * `--snapshot_path` (default="snapshot.pt")
+    * `--output_path`
+
+5. You should finally find in the `output_path` folder the `snapshot.pt` file that contains the model state.
+
 # DDPM
 
 In this repository you can find an application of a Deep Diffusion Model on the Animals-10 gold ranked dataset of kaggle https://www.kaggle.com/datasets/alessiocorrado99/animals10. 

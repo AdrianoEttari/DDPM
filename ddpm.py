@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 from torch import optim
 from utils import *
-from modules import UNet_conditional, EMA
+from models import UNet_conditional, EMA
 import numpy as np
 import copy
 import torch.multiprocessing as mp

@@ -13,7 +13,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 import imageio
 
-
 def ddp_setup():
     init_process_group(backend="nccl") # nccl is a collective communication library that is optimized for NVIDIA GPUs
 
@@ -228,13 +227,14 @@ def launch(num_classes: int,
             epochs: int,
             noise_schedule: str,
             save_every: int,
-            snapshot_path: str):
+            snapshot_path: str,
+            output_path: str):
     '''
     Don't get confused by image_size and img_size. The first is the size of the images in the dataset and will be passed to the dataloader.
     The second is passed just to the sample to generate images. You can tweak both of them.
     '''
     ddp_setup()
-    path = 'weights'
+    path = output_path 
     os.makedirs(path, exist_ok=True)
     dataloader = get_data_ddp(image_size, dataset_path, batch_size)
     model = UNet_conditional(num_classes=num_classes)
@@ -248,16 +248,17 @@ def launch(num_classes: int,
 if __name__ == '__main__':
     import argparse     
     parser = argparse.ArgumentParser(description='DDPM conditional with EMA and cosine schedule')
-    parser.add_argument('--dataset_path', type=str)
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--dataset_path', type=str, default='raw-img')
+    parser.add_argument('--epochs', type=int, default=500)
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--image_size', type=int, default=64)
     parser.add_argument('--num_classes', type=int, default=10)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--save_every', type=int, default=10)
     parser.add_argument('--noise_schedule', type=str, default='cosine')
     parser.add_argument('--snapshot_path', type=str, default='snapshot.pt') # You just need to pass the name of the snapshot file.
+    parser.add_argument('--output_path', type=str)
     args = parser.parse_args()
     launch(args.dataset_path, args.epochs, args.batch_size, args.image_size, args.num_classes, args.lr, args.save_every, args.noise_schedule, args.snapshot_path)
     
-# torchrun --standalone --nproc_per_node=cpu ddpm.py --dataset_path=raw-img/
+

@@ -6,17 +6,21 @@ import torch.nn.functional as F
 class EMA:
     def __init__(self, beta):
         super().__init__()
-        self.beta = beta
-        self.step = 0
+        self.beta = beta    # set the beta parameter for the exponential moving average
+        self.step = 0       # step counter (initialized at 0) to track when to start updating the moving average
 
     def update_model_average(self, ma_model, current_model):
-        for current_params, ma_params in zip(current_model.parameters(), ma_model.parameters()):
+        for current_params, ma_params in zip(current_model.parameters(), ma_model.parameters()): #iterate over all parameters in the current and moving average models
+            # get the old and new weights for the current and moving average models
             old_weight, up_weight = ma_params.data, current_params.data
+            # update the moving average model parameter
             ma_params.data = self.update_average(old_weight, up_weight)
 
     def update_average(self, old, new):
+        # if there is no old weight, return the new weight
         if old is None:
             return new
+        # compute the weighted average of the old and new weights using the beta parameter
         return old * self.beta + (1 - self.beta) * new # beta is usually around 0.99
         # therefore the new weights influence the ma parameters only a little bit
         # (which prevents outliers to have a big effect) whereas the old weights
@@ -30,26 +34,32 @@ class EMA:
         After the warmup we'll then always update the weights by iterating over all
         parameters and apply the update_average function.
         '''
+        # if we are still in the warmup phase, reset the moving average model to the current model
         if self.step < step_start_ema:
             self.reset_parameters(ema_model, model)
             self.step += 1
             return
+        # otherwise update the moving average model parameters using the current model parameters
         self.update_model_average(ema_model, model)
         self.step += 1
 
     def reset_parameters(self, ema_model, model):
+        # reset the parameters of the moving average model to the current model parameters
         ema_model.load_state_dict(model.state_dict()) # we set the weights of ema_model
         # to the ones of model.
+
 
 
 class SelfAttention(nn.Module):
     def __init__(self, channels, size):
         super(SelfAttention, self).__init__()
-        self.channels = channels
-        self.size = size
-        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
+        self.channels = channels       # store the number of channels
+        self.size = size               # store the size of input image
+        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)   # Define a multi-head attention layer with 4 heads and set batch_first to True
         self.ln = nn.LayerNorm([channels]) # Remember that LayerNorm normalizes each object independently through
             # the object features (channels)
+            
+        # Define a feedforward neural network with two linear layers and a GELU activation function    
         self.ff_self = nn.Sequential(
             nn.LayerNorm([channels]),
             nn.Linear(channels, channels),
@@ -58,6 +68,7 @@ class SelfAttention(nn.Module):
         )
 
     def forward(self, x):
+        # Reshape the input tensor to have dimensions (-1, channels, size * size) and swap the 1st and 2nd dimensions
         x = x.view(-1, self.channels, self.size * self.size).swapaxes(1, 2) # .view() is like .reshape() in numpy. 
         # the -1 means that the first dimension will be inferred according the other two provided. For example, if you
         # have a tensor shaped (3,4) and you do tensor.view(-1, 3, 2) it will return a tensor shaped (2,3,2).
@@ -109,44 +120,48 @@ class DoubleConv(nn.Module):
         )
 
     def forward(self, x):
+        '''
+        Performs a forward pass through the DoubleConv network with input x and returns
+        the output of the network.
+        '''
         if self.residual:
+            #if residual=True, apply a residual connection between
             return F.gelu(x + self.double_conv(x)) # residual connection
         else:
             return self.double_conv(x)
 
-
 class Down(nn.Module):
     '''
-    The main part consists in reducing the size of the image by a facror of 2 (with a MaxPool2d layer) and then
-    apply two Double convolutional layers. 
+    The main part consists in reducing the size of the image by a factor of 2 (with a MaxPool2d layer) and then
+    applying two Double convolutional layers. 
 
     The second part is the embedding layer. Since most blocks differ in terms of the hidden dimensions from the time 
-    step embedding we'll make use of we'll make use of a linear projection to lead the time embedding in the proper dimension. 
-    This consists of a SiLU activation and then a Linear projection which move the time embedding from the emb_dim dimension
+    step embedding we'll make use of a linear projection to lead the time embedding in the proper dimension. 
+    This consists of a SiLU activation and then a Linear projection which moves the time embedding from the emb_dim dimension
     to hidden dimensions.
 
-    In the forword pass we first feed images to the convolutional block and project the time embedding accordingly. Then just 
-    add both together and return.
+    In the forward pass we first feed images to the convolutional block and project the time embedding accordingly. 
+    Then we add both together and return.
     '''
     def __init__(self, in_channels, out_channels, emb_dim=256):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2), # downsample the image by a factor of 2
+            # apply two double convolutional layers to the downsampled image
             DoubleConv(in_channels, in_channels, residual=True),
             DoubleConv(in_channels, out_channels),
         )
 
         self.emb_layer = nn.Sequential(
-            # SiLU() is like GELU() but with a Logistic CDF instead of a Gaussian CDF.
-            nn.SiLU(),
-            nn.Linear(emb_dim, out_channels),
+            nn.SiLU(),   # apply a SiLU activation function to the time embedding
+            nn.Linear(emb_dim, out_channels),   # apply a linear projection to the time embedding to move it from emb_dim dimension to hidden dimensions
+
         )
 
     def forward(self, x, t):
-        x = self.maxpool_conv(x)
-        emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
-        return x + emb
-
+        x = self.maxpool_conv(x)   #feed the images to the convolutional block
+        emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])   #project the time embedding
+        return x + emb   #add the images and the projected time embedding and return the result
 
 class Up(nn.Module):
     '''

@@ -12,7 +12,9 @@ def plot_images(images):
     plt.figure(figsize=(12, 12))
     plt.imshow(torch.cat([
         torch.cat([i for i in images.cpu()], dim=-1),
-    ], dim=-2).permute(1, 2, 0).cpu())
+    ], dim=-2).permute(1, 2, 0).cpu()) # we need to permute the tensor because the default of torch
+    # is to have the channels in the first dimension, but matplotlib expects the channels
+    # in the last dimension. Also we need to convert the tensor with .cpu() to a numpy array
     plt.show()
 
 def save_images(images, path, **kwargs):
@@ -28,6 +30,18 @@ def save_images(images, path, **kwargs):
     # im.save(path)
 
 def get_data_ddp(image_size, dataset_path: str, batch_size: int):
+    '''
+    This function transforms the images in the dataset_path folder and returns a dataloader.
+    A DistributedSampler is used to split the batch inputs among the different processes.
+
+    Input:
+        image_size: the size of the images that will be returned by the dataloader
+        dataset_path: the path to the folder containing the images
+        batch_size: the size of the batches that will be returned by the dataloader
+
+    Output:
+        dataloader: a dataloader that returns batches of images
+    '''
     transforms = torchvision.transforms.Compose([
         torchvision.transforms.Resize(80), 
         torchvision.transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
@@ -40,6 +54,17 @@ def get_data_ddp(image_size, dataset_path: str, batch_size: int):
     return dataloader
 
 def IS_computer(generated_data_path, splits):
+    '''
+    This function computes the Inception Score of the images in the generated_data_path folder.
+
+    Input:
+        generated_data_path: the path to the folder containing the generated images
+        splits: the number of splits to use to compute the Inception Score
+
+    Output:
+        is_mean: the mean of the Inception Score
+        is_std: the standard deviation of the Inception Score
+    '''
     transform = torchvision.transforms.Compose([
          torchvision.transforms.Resize(299),   # resize the image to 299x299 pixels
          torchvision.transforms.CenterCrop(299),  # crop the image to 299x299 pixels at the center
@@ -73,6 +98,16 @@ def IS_computer(generated_data_path, splits):
 
 
 def FDI_computer(real_images, generated_images):
+    '''
+    This function computes the Fréchet Distance using the real_images and generated_images.
+
+    Input:
+        real_images: a tensor containing the real images
+        generated_images: a tensor containing the generated images
+
+    Output:
+        FDI: the Fréchet Distance between the real and generated images
+    '''
     from scipy.linalg import sqrtm
     model = torchvision.models.inception_v3(pretrained=True, transfrom_input=False).cuda().eval()
     # Generate feature representations of real and generated images

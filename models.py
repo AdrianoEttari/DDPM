@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import os
 
 class EMA:
     def __init__(self, beta):
@@ -193,9 +193,14 @@ class Up(nn.Module):
 
 
 class UNet_conditional(nn.Module):
-    def __init__(self, c_in=3, c_out=3, time_dim=256, num_classes=None, device="cuda"):
+    def __init__(self, c_in=3, c_out=3, time_dim=256, num_classes=None):
         super().__init__()
-        self.device = device
+        
+        if os.environ.get("LOCAL_RANK")==None:
+          self.gpu_id = 'cpu'
+        else:
+          self.gpu_id = int(os.environ["LOCAL_RANK"])
+        
         self.time_dim = time_dim
         self.inc = DoubleConv(c_in, 64)
         self.down1 = Down(64, 128)
@@ -226,7 +231,8 @@ class UNet_conditional(nn.Module):
     def pos_encoding(self, t, channels):
         inv_freq = 1.0 / (
             10000
-            ** (torch.arange(0, channels, 2, device=self.device).float() / channels)
+            
+            ** (torch.arange(0, channels, 2, device= torch.device('cpu' if self.gpu_id == 'cpu' else f'cuda:{self.gpu_id}')).float() / channels)
         )
         pos_enc_a = torch.sin(t.repeat(1, channels // 2) * inv_freq)
         pos_enc_b = torch.cos(t.repeat(1, channels // 2) * inv_freq)
